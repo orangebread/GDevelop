@@ -1,3 +1,7 @@
+// Load environment variables from .env.local file
+// This must be done before any other requires that might use process.env
+require('dotenv').config({ path: require('path').join(__dirname, '../.env.local') });
+
 const electron = require('electron');
 const path = require('path');
 const app = electron.app; // Module to control application life.
@@ -31,6 +35,7 @@ const {
   setupLocalGDJSDevelopmentWatcher,
   closeLocalGDJSDevelopmentWatcher,
 } = require('./LocalGDJSDevelopmentWatcher');
+const { registerAiStorageHandlers } = require('./main/aiFileStorage');
 const { setupWatcher, disableWatcher } = require('./LocalFilesystemWatcher');
 
 // Initialize `@electron/remote` module
@@ -82,7 +87,7 @@ app.on('ready', function() {
     app.dock.hide();
   }
 
-  registerGdideProtocol({ isDev });
+  registerGdideProtocol({ isDev: false }); // TEMPORARY: Force production mode for testing
 
   // Create the browser window.
   const options = {
@@ -136,7 +141,7 @@ app.on('ready', function() {
   // Load the index.html of the app.
   load({
     window: mainWindow,
-    isDev,
+    isDev: false, // TEMPORARY: Force production mode for testing
     path: '/index.html',
     devTools,
   });
@@ -156,6 +161,9 @@ app.on('ready', function() {
       buildElectronMenuFromDeclarativeTemplate(mainWindow, mainMenuTemplate)
     );
   });
+
+  // Register AI file storage IPC handlers
+  registerAiStorageHandlers();
 
   //Prevent any navigation inside the main window.
   mainWindow.webContents.on('will-navigate', (e, url) => {

@@ -27,6 +27,7 @@ import defaultShortcuts from '../../KeyboardShortcuts/DefaultShortcuts';
 import AlertMessage from '../../UI/AlertMessage';
 import ErrorBoundary from '../../UI/ErrorBoundary';
 import CompactSelectField from '../../UI/CompactSelectField';
+import { CustomAISettingsTab } from './CustomAISettingsTab';
 const electron = optionalRequire('electron');
 
 type Props = {|
@@ -109,6 +110,7 @@ const PreferencesDialog = ({
           options={[
             { value: 'preferences', label: <Trans>Preferences</Trans> },
             { value: 'shortcuts', label: <Trans>Keyboard Shortcuts</Trans> },
+            { value: 'custom-ai', label: <Trans>Custom AI</Trans> },
             ...(electron
               ? [{ value: 'folders', label: <Trans>Folders</Trans> }]
               : []),
@@ -642,6 +644,7 @@ const PreferencesDialog = ({
           </Column>
         </Line>
       )}
+      {currentTab === 'custom-ai' && <CustomAISettingsTab i18n={i18n} />}
       {electron && currentTab === 'folders' && (
         <ColumnStackLayout noMargin>
           <LocalFolderPicker

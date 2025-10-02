@@ -77,6 +77,7 @@ const commonProps = {
   },
   lastSendError: null,
   availableCredits: 400,
+  customAIEnabled: false,
   onSendFeedback: async () => {},
   hasOpenedProject: false,
   editorFunctionCallResults: [],

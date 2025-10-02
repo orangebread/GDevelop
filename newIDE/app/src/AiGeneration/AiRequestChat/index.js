@@ -107,6 +107,8 @@ type Props = {
   increaseQuotaOffering: 'subscribe' | 'upgrade' | 'none',
   price: UsagePrice | null,
   availableCredits: number,
+  // Custom AI settings (if enabled, bypass quota/subscription checks)
+  customAIEnabled: boolean,
 };
 
 export type AiRequestChatInterface = {|
@@ -272,6 +274,7 @@ export const AiRequestChat = React.forwardRef<Props, AiRequestChatInterface>(
       lastSendError,
       price,
       availableCredits,
+      customAIEnabled,
       hasOpenedProject,
       editorFunctionCallResults,
       onProcessFunctionCalls,
@@ -407,7 +410,10 @@ export const AiRequestChat = React.forwardRef<Props, AiRequestChatInterface>(
     );
 
     const subscriptionBanner =
-      quota && quota.limitReached && increaseQuotaOffering !== 'none' ? (
+      !customAIEnabled &&
+      quota &&
+      quota.limitReached &&
+      increaseQuotaOffering !== 'none' ? (
         <GetSubscriptionCard
           placementId="ai-requests"
           subscriptionDialogOpeningReason={

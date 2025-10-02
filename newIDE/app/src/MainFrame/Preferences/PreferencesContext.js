@@ -227,6 +227,12 @@ export type PreferencesValues = {|
   gamesDashboardOrderBy: GamesDashboardOrderBy,
   takeScreenshotOnPreview: boolean,
   showAiAskButtonInTitleBar: boolean,
+  customAI: {|
+    enabled: boolean,
+    provider: 'openai' | 'anthropic' | 'openrouter' | 'gdevelop',
+    model: string,
+    fallbackToGDevelop: boolean,
+  |},
 |};
 
 /**
@@ -332,6 +338,18 @@ export type Preferences = {|
   ) => void,
   setTakeScreenshotOnPreview: (enabled: boolean) => void,
   setShowAiAskButtonInTitleBar: (enabled: boolean) => void,
+  setCustomAISettings: (settings: {|
+    enabled: boolean,
+    provider: 'openai' | 'anthropic' | 'openrouter' | 'gdevelop',
+    model: string,
+    fallbackToGDevelop: boolean,
+  |}) => void,
+  getCustomAISettings: () => {|
+    enabled: boolean,
+    provider: 'openai' | 'anthropic' | 'openrouter' | 'gdevelop',
+    model: string,
+    fallbackToGDevelop: boolean,
+  |},
 |};
 
 export const initialPreferences = {
@@ -390,6 +408,12 @@ export const initialPreferences = {
     gamesDashboardOrderBy: 'lastModifiedAt',
     takeScreenshotOnPreview: true,
     showAiAskButtonInTitleBar: true,
+    customAI: {
+      enabled: false,
+      provider: 'gdevelop',
+      model: '',
+      fallbackToGDevelop: false,
+    },
   },
   setLanguage: () => {},
   setThemeName: () => {},
@@ -465,6 +489,13 @@ export const initialPreferences = {
   ) => {},
   setTakeScreenshotOnPreview: (enabled: boolean) => {},
   setShowAiAskButtonInTitleBar: (enabled: boolean) => {},
+  setCustomAISettings: (settings) => {},
+  getCustomAISettings: () => ({
+    enabled: false,
+    provider: 'gdevelop',
+    model: '',
+    fallbackToGDevelop: false,
+  }),
 };
 
 const PreferencesContext = React.createContext<Preferences>(initialPreferences);

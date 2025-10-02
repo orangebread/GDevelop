@@ -21,6 +21,7 @@ import formatDate from 'date-fns/format';
 import DrawerTopBar from '../UI/DrawerTopBar';
 import PlaceholderError from '../UI/PlaceholderError';
 import { textEllipsisStyle } from '../UI/TextEllipsis';
+import FileAiRequestStorage from './FileAiRequestStorage';
 
 type Props = {|
   open: boolean,
@@ -208,16 +209,40 @@ export const AskAiHistory = ({
 
   const fetchAiRequests = React.useCallback(
     async () => {
-      if (!profile) return;
-
       setIsLoading(true);
       setError(null);
 
       try {
-        const requests = await getAiRequests(getAuthorizationHeader, {
-          userId: profile.id,
+        let backendRequests = [];
+
+        // Fetch from backend if authenticated
+        if (profile) {
+          backendRequests = await getAiRequests(getAuthorizationHeader, {
+            userId: profile.id,
+          });
+        }
+
+        // Always load local requests (for custom AI)
+        let localRequests = [];
+        if (FileAiRequestStorage.isAvailable()) {
+          localRequests = await FileAiRequestStorage.loadAll();
+        }
+
+        // Merge and deduplicate (backend takes precedence)
+        const requestMap = new Map();
+        localRequests.forEach(req => requestMap.set(req.id, { ...req, isLocal: true }));
+        backendRequests.forEach(req => requestMap.set(req.id, { ...req, isLocal: false }));
+
+        const mergedRequests = Array.from(requestMap.values());
+
+        // Sort by updated date (newest first)
+        mergedRequests.sort((a, b) => {
+          const aTime = new Date(a.updatedAt).getTime();
+          const bTime = new Date(b.updatedAt).getTime();
+          return bTime - aTime;
         });
-        setAiRequests(requests);
+
+        setAiRequests(mergedRequests);
       } catch (err) {
         setError(err);
         console.error('Error fetching AI requests:', err);

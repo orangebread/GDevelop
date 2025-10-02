@@ -46,6 +46,13 @@ const openPreviewWindow = ({
       parent: alwaysOnTop ? parentWindow : null,
       x: numberOfWindows > 1 ? positions[i + 1].x : undefined,
       y: numberOfWindows > 1 ? positions[i + 1].y : undefined,
+      webPreferences: {
+        webSecurity: false, // Allow to access to local files,
+        // Allow Node.js API access in renderer process, as long
+        // as we've not removed dependency on it and on "@electron/remote".
+        nodeIntegration: true,
+        contextIsolation: false,
+      },
     };
 
     let previewWindow = new BrowserWindow(browserWindowOptions);

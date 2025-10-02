@@ -118,13 +118,8 @@ export default class LocalPreviewLauncher extends React.Component<
           useContentSize: true,
           title: `Preview of ${project.getName()}`,
           backgroundColor: '#000000',
-          webPreferences: {
-            webSecurity: false, // Allow to access to local files,
-            // Allow Node.js API access in renderer process, as long
-            // as we've not removed dependency on it and on "@electron/remote".
-            nodeIntegration: true,
-            contextIsolation: false,
-          },
+          // Note: webPreferences are set in the main process (PreviewWindow.js)
+          // for security reasons - they cannot be safely passed via IPC.
         },
         previewGamePath: gamePath,
         hideMenuBar: !options.getIsMenuBarHiddenInPreview(),
