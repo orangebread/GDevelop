@@ -1,0 +1,60 @@
+name: Sync upstream and rebuild fork/main
+
+on:
+  schedule:
+    - cron: "0 6 * * *"  # Every day at 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    name: Sync upstream and rebuild integration branch
+    runs-on: ubuntu-latest
+    concurrency:
+      group: sync-upstream
+      cancel-in-progress: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream and fetch
+        run: |
+          set -euo pipefail
+          if git remote get-url upstream >/dev/null 2>&1; then
+            git remote set-url upstream https://github.com/4ian/GDevelop.git
+          else
+            git remote add upstream https://github.com/4ian/GDevelop.git
+          fi
+          git fetch --all --prune
+
+      - name: Update master (clean mirror of upstream)
+        run: |
+          set -euo pipefail
+          git checkout master
+          git reset --hard upstream/master
+          git push --force-with-lease origin master
+
+      - name: Rebuild fork/main integration branch
+        run: |
+          set -euo pipefail
+          # Start from upstream/master
+          git checkout -B fork/main upstream/master
+          # Merge topic branches in order (merge remote tracking to ensure freshness)
+          git merge --no-ff -m "merge: docs/custom-ai" origin/docs/custom-ai
+          git merge --no-ff -m "merge: feature/custom-ai-core" origin/feature/custom-ai-core
+          git merge --no-ff -m "merge: feature/custom-ai-electron" origin/feature/custom-ai-electron
+          git merge --no-ff -m "merge: chore/env-samples" origin/chore/env-samples
+          git merge --no-ff -m "merge: build/deps" origin/build/deps
+          # Push integration branch
+          git push --force-with-lease origin fork/main
+
