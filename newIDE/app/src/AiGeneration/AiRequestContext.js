@@ -12,6 +12,8 @@ import Window from '../Utils/Window';
 import { AI_SETTINGS_FETCH_TIMEOUT } from '../Utils/GlobalFetchTimeouts';
 import { useAsyncLazyMemo } from '../Utils/UseLazyMemo';
 import { retryIfFailed } from '../Utils/RetryIfFailed';
+import PreferencesContext from '../MainFrame/Preferences/PreferencesContext';
+import FileAiRequestStorage from './FileAiRequestStorage';
 
 type EditorFunctionCallResultsStorage = {|
   getEditorFunctionCallResults: (
@@ -100,10 +102,35 @@ export const useAiRequestsStorage = (): AiRequestStorage => {
   const { profile, getAuthorizationHeader } = React.useContext(
     AuthenticatedUserContext
   );
+  const { getCustomAISettings } = React.useContext(PreferencesContext);
 
+  // Load initial state from file storage on mount
   const [aiRequests, setAiRequests] = React.useState<{ [string]: AiRequest }>(
-    {}
+    () => {
+      // Initial state is empty - we'll load from file storage in useEffect
+      return {};
+    }
   );
+
+  // Load conversations from file storage on mount
+  React.useEffect(() => {
+    const loadFromFileStorage = async () => {
+      if (!FileAiRequestStorage.isAvailable()) return;
+
+      try {
+        const requests = await FileAiRequestStorage.loadAll();
+        const requestMap = {};
+        requests.forEach(req => {
+          requestMap[req.id] = req;
+        });
+        setAiRequests(requestMap);
+      } catch (error) {
+        console.error('Failed to load AI requests from file storage:', error);
+      }
+    };
+
+    loadFromFileStorage();
+  }, []);
 
   const updateAiRequest = React.useCallback(
     (aiRequestId: string, aiRequest: AiRequest) => {
@@ -111,8 +138,16 @@ export const useAiRequestsStorage = (): AiRequestStorage => {
         ...aiRequests,
         [aiRequestId]: aiRequest,
       }));
+
+      // Persist to file storage if using custom AI
+      const customAISettings = getCustomAISettings();
+      if (customAISettings.enabled && FileAiRequestStorage.isAvailable()) {
+        FileAiRequestStorage.save(aiRequest).catch(error => {
+          console.error('Failed to persist AI request to file storage:', error);
+        });
+      }
     },
-    []
+    [getCustomAISettings]
   );
 
   const refreshAiRequest = React.useCallback(

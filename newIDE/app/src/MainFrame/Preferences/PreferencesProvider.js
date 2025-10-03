@@ -199,6 +199,8 @@ export default class PreferencesProvider extends React.Component<Props, State> {
     setGamesDashboardOrderBy: this._setGamesDashboardOrderBy.bind(this),
     setTakeScreenshotOnPreview: this._setTakeScreenshotOnPreview.bind(this),
     setShowAiAskButtonInTitleBar: this._setShowAiAskButtonInTitleBar.bind(this),
+    setCustomAISettings: this._setCustomAISettings.bind(this),
+    getCustomAISettings: this._getCustomAISettings.bind(this),
   };
 
   componentDidMount() {
@@ -1042,6 +1044,27 @@ export default class PreferencesProvider extends React.Component<Props, State> {
       }),
       () => this._persistValuesToLocalStorage(this.state)
     );
+  }
+
+  _setCustomAISettings(settings: {|
+    enabled: boolean,
+    provider: 'openai' | 'anthropic' | 'openrouter' | 'gdevelop',
+    model: string,
+    fallbackToGDevelop: boolean,
+  |}) {
+    this.setState(
+      state => ({
+        values: {
+          ...state.values,
+          customAI: settings,
+        },
+      }),
+      () => this._persistValuesToLocalStorage(this.state)
+    );
+  }
+
+  _getCustomAISettings() {
+    return this.state.values.customAI;
   }
 
   render() {

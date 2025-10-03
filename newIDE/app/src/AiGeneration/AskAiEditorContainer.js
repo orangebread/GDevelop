@@ -48,6 +48,7 @@ import { type FileMetadata, type StorageProvider } from '../ProjectsStorage';
 import { useEnsureExtensionInstalled } from './UseEnsureExtensionInstalled';
 import { useGenerateEvents } from './UseGenerateEvents';
 import { useSearchAndInstallAsset } from './UseSearchAndInstallAsset';
+import PreferencesContext from '../MainFrame/Preferences/PreferencesContext';
 import { type ResourceManagementProps } from '../ResourcesList/ResourceSource';
 import {
   sendAiRequestMessageSent,
@@ -59,6 +60,8 @@ import { prepareAiUserContent } from './PrepareAiUserContent';
 import { AiRequestContext } from './AiRequestContext';
 import { getAiConfigurationPresetsWithAvailability } from './AiConfiguration';
 import { type CreateProjectResult } from '../Utils/UseCreateProject';
+import { useAIService } from '../CustomAI';
+import FileAiRequestStorage from './FileAiRequestStorage';
 
 const gd: libGDevelop = global.gd;
 
@@ -598,6 +601,10 @@ export const AskAiEditor = React.memo<Props>(
         subscription,
       } = React.useContext(AuthenticatedUserContext);
 
+      const { getCustomAISettings } = React.useContext(PreferencesContext);
+      const customAISettings = getCustomAISettings();
+      const aiService = useAIService();
+
       const availableCredits = limits ? limits.credits.userBalance.amount : 0;
       const quota =
         (limits && limits.quotas && limits.quotas['ai-request']) || null;
@@ -628,7 +635,8 @@ export const AskAiEditor = React.memo<Props>(
             if (!newAiRequestOptions) return;
             console.info('Starting a new AI request...');
 
-            if (!profile) {
+            // Check if user is authenticated (required unless custom AI is enabled)
+            if (!profile && !customAISettings.enabled) {
               onOpenCreateAccountDialog();
               startNewAiRequest(null);
               return;
@@ -644,14 +652,17 @@ export const AskAiEditor = React.memo<Props>(
 
             // Ensure the user has enough credits to pay for the request, or ask them
             // to buy some more.
+            // Skip this check if custom AI is enabled (user is using their own API key).
             let payWithCredits = false;
-            if (quota && quota.limitReached && aiRequestPriceInCredits) {
-              payWithCredits = true;
-              if (availableCredits < aiRequestPriceInCredits) {
-                openCreditsPackageDialog({
-                  missingCredits: aiRequestPriceInCredits - availableCredits,
-                });
-                return;
+            if (!customAISettings.enabled) {
+              if (quota && quota.limitReached && aiRequestPriceInCredits) {
+                payWithCredits = true;
+                if (availableCredits < aiRequestPriceInCredits) {
+                  openCreditsPackageDialog({
+                    missingCredits: aiRequestPriceInCredits - availableCredits,
+                  });
+                  return;
+                }
               }
             }
 
@@ -676,27 +687,56 @@ export const AskAiEditor = React.memo<Props>(
 
               setSendingAiRequest(null, true);
 
-              const preparedAiUserContent = await prepareAiUserContent({
-                getAuthorizationHeader,
-                userId: profile.id,
-                simplifiedProjectJson,
-                projectSpecificExtensionsSummaryJson,
-              });
+              let aiRequest;
 
-              const aiRequest = await createAiRequest(getAuthorizationHeader, {
-                userRequest: userRequest,
-                userId: profile.id,
-                ...preparedAiUserContent,
-                payWithCredits,
-                gameId: project ? project.getProjectUuid() : null,
-                fileMetadata,
-                storageProviderName,
-                mode,
-                toolsVersion: 'v3',
-                aiConfiguration: {
-                  presetId: aiConfigurationPresetId,
-                },
-              });
+              if (customAISettings.enabled) {
+                // Custom AI path - use AIService
+                aiRequest = await aiService.createAiRequest({
+                  userId: profile ? profile.id : 'anonymous',
+                  userRequest: userRequest,
+                  gameProjectJson: simplifiedProjectJson, // Pass directly, no upload
+                  gameProjectJsonUserRelativeKey: null,
+                  projectSpecificExtensionsSummaryJson,
+                  projectSpecificExtensionsSummaryJsonUserRelativeKey: null,
+                  payWithCredits: false, // Not applicable for custom AI
+                  mode,
+                  aiConfiguration: {
+                    presetId: aiConfigurationPresetId,
+                  },
+                  gameId: project ? project.getProjectUuid() : null,
+                  fileMetadata: null,
+                  storageProviderName: null,
+                  toolsVersion: 'v3',
+                });
+
+                // Persist to file storage
+                if (FileAiRequestStorage.isAvailable()) {
+                  await FileAiRequestStorage.save(aiRequest);
+                }
+              } else {
+                // GDevelop backend path - existing code
+                const preparedAiUserContent = await prepareAiUserContent({
+                  getAuthorizationHeader,
+                  userId: profile.id,
+                  simplifiedProjectJson,
+                  projectSpecificExtensionsSummaryJson,
+                });
+
+                aiRequest = await createAiRequest(getAuthorizationHeader, {
+                  userRequest: userRequest,
+                  userId: profile.id,
+                  ...preparedAiUserContent,
+                  payWithCredits,
+                  gameId: project ? project.getProjectUuid() : null,
+                  fileMetadata,
+                  storageProviderName,
+                  mode,
+                  toolsVersion: 'v3',
+                  aiConfiguration: {
+                    presetId: aiConfigurationPresetId,
+                  },
+                });
+              }
 
               console.info('Successfully created a new AI request:', aiRequest);
               setSendingAiRequest(null, false);
@@ -711,36 +751,49 @@ export const AskAiEditor = React.memo<Props>(
               if (aiRequestChatRef.current)
                 aiRequestChatRef.current.resetUserInput(selectedAiRequestId);
 
-              sendAiRequestStarted({
-                simplifiedProjectJsonLength: simplifiedProjectJson
-                  ? simplifiedProjectJson.length
-                  : 0,
-                projectSpecificExtensionsSummaryJsonLength: projectSpecificExtensionsSummaryJson
-                  ? projectSpecificExtensionsSummaryJson.length
-                  : 0,
-                payWithCredits,
-                storageProviderName,
-                mode,
-                aiRequestId: aiRequest.id,
-              });
+              // Analytics (skip for custom AI to avoid tracking)
+              if (!customAISettings.enabled) {
+                sendAiRequestStarted({
+                  simplifiedProjectJsonLength: simplifiedProjectJson
+                    ? simplifiedProjectJson.length
+                    : 0,
+                  projectSpecificExtensionsSummaryJsonLength: projectSpecificExtensionsSummaryJson
+                    ? projectSpecificExtensionsSummaryJson.length
+                    : 0,
+                  payWithCredits,
+                  storageProviderName,
+                  mode,
+                  aiRequestId: aiRequest.id,
+                });
+              }
             } catch (error) {
               console.error('Error starting a new AI request:', error);
+              console.error('Error details:', {
+                message: error.message,
+                stack: error.stack,
+                customAIEnabled: customAISettings.enabled,
+                provider: customAISettings.provider,
+                model: customAISettings.model,
+              });
               setLastSendError(null, error);
             }
 
             // Refresh the user limits, to ensure quota and credits information
-            // is up-to-date after an AI request.
-            await delay(500);
-            try {
-              await retryIfFailed({ times: 2 }, onRefreshLimits);
-            } catch (error) {
-              // Ignore limits refresh error.
+            // is up-to-date after an AI request (skip for custom AI).
+            if (!customAISettings.enabled) {
+              await delay(500);
+              try {
+                await retryIfFailed({ times: 2 }, onRefreshLimits);
+              } catch (error) {
+                // Ignore limits refresh error.
+              }
             }
           })();
         },
         [
           aiRequestPriceInCredits,
           availableCredits,
+          customAISettings.enabled,
           getAuthorizationHeader,
           onOpenCreateAccountDialog,
           onRefreshLimits,
@@ -758,6 +811,7 @@ export const AskAiEditor = React.memo<Props>(
           updateAiRequest,
           newAiRequestOptions,
           onOpenAskAi,
+          aiService,
         ]
       );
 
@@ -783,8 +837,9 @@ export const AskAiEditor = React.memo<Props>(
           userMessage: string,
           createdSceneNames?: Array<string>,
         |}) => {
+          // Allow unauthenticated usage when custom AI is enabled
           if (
-            !profile ||
+            (!profile && !customAISettings.enabled) ||
             !selectedAiRequestId ||
             isSendingAiRequest(selectedAiRequestId)
           )
@@ -808,19 +863,22 @@ export const AskAiEditor = React.memo<Props>(
           if (functionCallOutputs.length === 0 && !userMessage) return;
 
           // Paying with credits is only when a user message is sent (and quota is exhausted).
+          // Skip this check if custom AI is enabled (user is using their own API key).
           let payWithCredits = false;
-          if (
-            userMessage &&
-            quota &&
-            quota.limitReached &&
-            aiRequestPriceInCredits
-          ) {
-            payWithCredits = true;
-            if (availableCredits < aiRequestPriceInCredits) {
-              openCreditsPackageDialog({
-                missingCredits: aiRequestPriceInCredits - availableCredits,
-              });
-              return;
+          if (!customAISettings.enabled) {
+            if (
+              userMessage &&
+              quota &&
+              quota.limitReached &&
+              aiRequestPriceInCredits
+            ) {
+              payWithCredits = true;
+              if (availableCredits < aiRequestPriceInCredits) {
+                openCreditsPackageDialog({
+                  missingCredits: aiRequestPriceInCredits - availableCredits,
+                });
+                return;
+              }
             }
           }
 
@@ -841,28 +899,54 @@ export const AskAiEditor = React.memo<Props>(
                 )
               : null;
 
-            const preparedAiUserContent = await prepareAiUserContent({
-              getAuthorizationHeader,
-              userId: profile.id,
-              simplifiedProjectJson,
-              projectSpecificExtensionsSummaryJson,
-            });
+            let aiRequest: AiRequest;
 
-            const aiRequest: AiRequest = await retryIfFailed({ times: 2 }, () =>
-              addMessageToAiRequest(getAuthorizationHeader, {
-                userId: profile.id,
+            if (customAISettings.enabled) {
+              // Custom AI path - use AIService
+              aiRequest = await aiService.addMessage({
+                userId: profile ? profile.id : 'anonymous',
                 aiRequestId: selectedAiRequestId,
-                functionCallOutputs,
-                ...preparedAiUserContent,
-                payWithCredits,
+                aiRequest: selectedAiRequest,
                 userMessage,
-              })
-            );
+                functionCallOutputs,
+                payWithCredits: false, // Not applicable for custom AI
+                gameProjectJson: simplifiedProjectJson,
+                gameProjectJsonUserRelativeKey: null,
+                projectSpecificExtensionsSummaryJson,
+                projectSpecificExtensionsSummaryJsonUserRelativeKey: null,
+              });
+
+              // Persist to file storage
+              if (FileAiRequestStorage.isAvailable()) {
+                await FileAiRequestStorage.save(aiRequest);
+              }
+            } else {
+              // GDevelop backend path - existing code
+              const preparedAiUserContent = await prepareAiUserContent({
+                getAuthorizationHeader,
+                userId: profile.id,
+                simplifiedProjectJson,
+                projectSpecificExtensionsSummaryJson,
+              });
+
+              aiRequest = await retryIfFailed({ times: 2 }, () =>
+                addMessageToAiRequest(getAuthorizationHeader, {
+                  userId: profile.id,
+                  aiRequestId: selectedAiRequestId,
+                  functionCallOutputs,
+                  ...preparedAiUserContent,
+                  payWithCredits,
+                  userMessage,
+                })
+              );
+            }
+
             updateAiRequest(aiRequest.id, aiRequest);
             setSendingAiRequest(aiRequest.id, false);
             clearEditorFunctionCallResults(aiRequest.id);
 
-            if (userMessage) {
+            // Analytics (skip for custom AI to avoid tracking)
+            if (userMessage && !customAISettings.enabled) {
               sendAiRequestMessageSent({
                 simplifiedProjectJsonLength: simplifiedProjectJson
                   ? simplifiedProjectJson.length
@@ -878,6 +962,14 @@ export const AskAiEditor = React.memo<Props>(
             }
           } catch (error) {
             // TODO: update the label of the button to send again.
+            console.error('Error sending message to AI request:', error);
+            console.error('Error details:', {
+              message: error.message,
+              stack: error.stack,
+              customAIEnabled: customAISettings.enabled,
+              provider: customAISettings.provider,
+              model: customAISettings.model,
+            });
             setLastSendError(selectedAiRequestId, error);
           }
 
@@ -886,12 +978,14 @@ export const AskAiEditor = React.memo<Props>(
               aiRequestChatRef.current.resetUserInput(selectedAiRequestId);
 
             // Refresh the user limits, to ensure quota and credits information
-            // is up-to-date after an AI request.
-            await delay(500);
-            try {
-              await retryIfFailed({ times: 2 }, onRefreshLimits);
-            } catch (error) {
-              // Ignore limits refresh error.
+            // is up-to-date after an AI request (skip for custom AI).
+            if (!customAISettings.enabled) {
+              await delay(500);
+              try {
+                await retryIfFailed({ times: 2 }, onRefreshLimits);
+              } catch (error) {
+                // Ignore limits refresh error.
+              }
             }
           }
 
@@ -923,6 +1017,7 @@ export const AskAiEditor = React.memo<Props>(
           quota,
           aiRequestPriceInCredits,
           availableCredits,
+          customAISettings.enabled,
           openCreditsPackageDialog,
           setSendingAiRequest,
           updateAiRequest,
@@ -934,6 +1029,7 @@ export const AskAiEditor = React.memo<Props>(
           hasFunctionsCallsToProcess,
           onOpenAskAi,
           onOpenLayout,
+          aiService,
         ]
       );
       const onSendEditorFunctionCallResults = React.useCallback(
@@ -1021,6 +1117,7 @@ export const AskAiEditor = React.memo<Props>(
                 }
                 price={aiRequestPrice}
                 availableCredits={availableCredits}
+                customAIEnabled={customAISettings.enabled}
                 onSendFeedback={onSendFeedback}
                 hasOpenedProject={!!project}
                 isAutoProcessingFunctionCalls={
