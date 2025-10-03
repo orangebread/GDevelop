@@ -1,5 +1,6 @@
 dist/
 app/www/
 .env
+.env.local
 app/extensions/ReactDeveloperTools
 app/extensions/__MACOSX
